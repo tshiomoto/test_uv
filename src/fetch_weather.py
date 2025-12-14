@@ -1,8 +1,10 @@
 from datetime import datetime
+import traceback
 import requests
 import json
 import polars as pl
 from pyiceberg.catalog.sql import SqlCatalog
+from pyiceberg.exceptions import NamespaceAlreadyExistsError, TableAlreadyExistsError
 
 WAREHOUSE_PATH = "data"
 BASE_URL = "https://weather.tsukumijima.net/api/forecast"
@@ -36,20 +38,30 @@ def fetch_data(place: str):
     try:
         catalog.create_namespace("weather")
         print("Namespace 'weather' を作成しました。")
-    except Exception as e:
-        print("Namespace 'weather' は既に存在するか、作成に失敗しました。エラー内容:", e)
+
+    except NamespaceAlreadyExistsError:
+        print("Namespace 'weather' はすでに存在しています。")
+
+    except Exception:
+        error_msg = traceback.format_exc()
+        print("Namespace 'weather' は既に存在するか、作成に失敗しました。エラー内容:", error_msg)
+
+
+    try:
+        tgt_table = catalog.create_table(
+            "weather.forecast",
+            schema=df.to_arrow().schema
+        )
+        print("テーブル 'weather.forecast' を作成しました。")
     
-    finally:
-        try:
-            tgt_table = catalog.create_table(
-                "weather.forecast",
-                schema=df.to_arrow().schema
-            )
-            print("テーブル 'weather.forecast' を作成しました。")
-        except Exception as e:
-            tgt_table = catalog.load_table("weather.forecast")
-            print("テーブル 'weather.forecast' は既に存在するか、作成に失敗しました。エラー内容:", e)
+    except TableAlreadyExistsError:
+        print("テーブル 'weather.forecast' はすでに存在しています。")
+        tgt_table = catalog.load_table("weather.forecast")
+
+    except Exception:
+        error_msg = traceback.format_exc()
+        print("テーブル 'weather.forecast' の作成に失敗しました。エラー内容:", error_msg)
 
 
-        df.write_iceberg(tgt_table, mode='append')
-        print("fetch data completed!")
+    df.write_iceberg(tgt_table, mode='append')
+    print("fetch data completed!")
